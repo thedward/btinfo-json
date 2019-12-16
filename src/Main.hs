@@ -49,9 +49,13 @@ addInfoHash be@(BDict m) = do hash <- BString . BL.pack <$> infoHash be
                               return new
 addInfoHash _ = Nothing
 
+addFileName f (BDict m) = BDict ( M.insert "filename" (BString f) m )
+addFileName _ bd = bd
+
 bytesToInfo bs = bRead bs >>= addInfoHash
 
 main = do args <- getArgs
           fs   <- mapM BL.readFile args
-          let ts = map bytesToInfo fs
-          mapM_ ( BL.putStrLn . encode ) (catMaybes ts)
+          let ts  = map bytesToInfo fs
+          let ts' = zipWith ( \f bd ->  addFileName f <$> bd ) (map BL.pack args) ts
+          mapM_ ( BL.putStrLn . encode ) (catMaybes ts')
