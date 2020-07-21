@@ -1,5 +1,5 @@
 name:                btinfo-json
-version:             0.1.0.0
+version:             0.2.0.0
 github:              "thedward/btinfo-json"
 license:             BSD3
 author:              "Thedward Blevins"
@@ -38,6 +38,7 @@ executables:
     - SHA
     - text
     - bytestring
+    - utf8-string
     - containers
     - memory
 

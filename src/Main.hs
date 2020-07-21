@@ -7,6 +7,7 @@ import qualified Data.BEncode as BE
 import GHC.Generics (Generic(..))
 import Data.Aeson (Value(..),ToJSON(..),FromJSON(..),encode,decode,genericToEncoding,defaultOptions,sumEncoding,SumEncoding(..))
 import Data.ByteString.Lazy.Char8 (ByteString(..))
+import qualified Data.ByteString.Lazy.UTF8 as U8 (fromString)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Aeson.Encoding (lazyText,null_)
 import Data.Text.Lazy.Encoding (decodeUtf8',decodeUtf8)
@@ -57,5 +58,5 @@ bytesToInfo bs = bRead bs >>= addInfoHash
 main = do args <- getArgs
           fs   <- mapM BL.readFile args
           let ts  = map bytesToInfo fs
-          let ts' = zipWith ( \f bd ->  addFileName f <$> bd ) (map BL.pack args) ts
+          let ts' = zipWith ( \f bd ->  addFileName f <$> bd ) (map U8.fromString args) ts
           mapM_ ( BL.putStrLn . encode ) (catMaybes ts')
