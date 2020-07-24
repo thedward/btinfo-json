@@ -10,11 +10,13 @@ import Data.ByteString.Lazy.Char8 (ByteString(..))
 import qualified Data.ByteString.Lazy.UTF8 as U8 (fromString)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.ByteString.Lazy as B8
+import qualified Data.ByteString as SB8 (hGetContents)
 import Data.Aeson.Encoding (lazyText,null_)
 import Data.Text.Lazy.Encoding (decodeUtf8',decodeUtf8)
 import Data.Either (fromRight)
 import System.Environment (getArgs)
 import System.Exit (die)
+import System.IO (withBinaryFile,IOMode(..))
 import Data.Maybe (catMaybes,fromMaybe)
 import qualified Data.Map.Strict as M
 import Data.Digest.Pure.SHA (sha1)
@@ -25,7 +27,6 @@ deriving instance Generic BEncode
 
 instance ToJSON ByteString where
   toJSON bs = fromRight "<data>" (toJSON <$> decodeUtf8' bs)
---toEncoding bs = lazyText $ fromRight (decodeUtf8 $ dataURI Nothing Nothing bs) (decodeUtf8' bs)
   toEncoding bs = fromRight null_ (lazyText <$> decodeUtf8' bs)
 
 instance ToJSON BEncode where
@@ -44,30 +45,37 @@ readTorrentFile path = bRead <$> B8.readFile path
 bencodeLookup k (BDict m) = M.lookup k m
 bencodeLookup k _ = Nothing
 
-infoHash :: BEncode -> Maybe String
+infoHash :: BEncode -> Maybe BEncode
 infoHash be = torrent_hash <|> magnet_hash
-  where torrent_hash = show . sha1 . bPack <$> bencodeLookup "info" be
+  where torrent_hash = BString . BL.pack . show . sha1 . bPack <$> bencodeLookup "info" be
         magnet_hash = do mi <- bencodeLookup "magnet-info" be
                          ih <- bencodeLookup "info_hash" mi
                          case ih of
                               BString bs -> return (bsToHex bs)
                               _          -> Nothing
-        bsToHex bs = BL.unpack $ B8.fromStrict ( convertToBase Base16 (B8.toStrict bs ) ) 
+        bsToHex bs = BString $ B8.fromStrict ( convertToBase Base16 (B8.toStrict bs ) ) 
 
 
-addInfoHash be@(BDict m) = case BString . BL.pack <$> infoHash be of
-                                Nothing   -> return be
-                                Just hash -> return ( BDict (M.insert "hash" hash m) )
+bdictInsert :: String -> BEncode -> BEncode -> BEncode
+bdictInsert k v (BDict m)  = BDict $ M.insert k v m
+bdictInsert _ _ bd         = bd
 
-addInfoHash _ = Nothing
+addInfoHash be = maybe be (\bs -> bdictInsert "hash" bs be) (infoHash be )
 
 addFileName f (BDict m) = BDict ( M.insert "filename" (BString f) m )
 addFileName _ bd = bd
 
-bytesToInfo bs = bRead bs >>= addInfoHash
+bytesToInfo fp bs = bdictInsert "filename" (BString . U8.fromString $ fp) . addInfoHash <$> bRead bs 
 
-main = do args <- getArgs
-          fs   <- mapM BL.readFile args
-          let ts  = map bytesToInfo fs
-          let ts' = zipWith ( \f bd ->  addFileName f <$> bd ) (map U8.fromString args) ts
-          mapM_ ( BL.putStrLn . encode ) (catMaybes ts')
+bytesToTorrent file bs = bdictInsert "filename" (bString file) . addInfoHash <$> bRead bs
+
+bString str = BString ( U8.fromString str )
+
+main = do files <- getArgs
+          mapM_ jsonify files
+  where jsonify file = withBinaryFile file ReadMode 
+                   (\h -> do bs   <- B8.fromStrict <$> SB8.hGetContents h 
+                             let json = encode <$> bytesToInfo file bs
+                             maybe mempty BL.putStrLn json )
+
+
