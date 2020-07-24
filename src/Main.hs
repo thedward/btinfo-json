@@ -15,9 +15,8 @@ import Data.Aeson.Encoding (lazyText,null_)
 import Data.Text.Lazy.Encoding (decodeUtf8',decodeUtf8)
 import Data.Either (fromRight)
 import System.Environment (getArgs)
-import System.Exit (die)
 import System.IO (withBinaryFile,IOMode(..))
-import Data.Maybe (catMaybes,fromMaybe)
+import Data.Maybe (fromMaybe)
 import qualified Data.Map.Strict as M
 import Data.Digest.Pure.SHA (sha1)
 import Data.ByteArray.Encoding (convertToBase,Base(..))
@@ -40,8 +39,6 @@ dataURI mime charset bs = B8.concat ["data:",mime',";charset=",charset',";base64
         charset' = fromMaybe "binary" charset
         b64data  = base64Encode bs
 
-readTorrentFile path = bRead <$> B8.readFile path 
-
 bencodeLookup k (BDict m) = M.lookup k m
 bencodeLookup k _ = Nothing
 
@@ -55,17 +52,11 @@ infoHash be = torrent_hash <|> magnet_hash
                               _          -> Nothing
         bsToHex bs = BString $ B8.fromStrict ( convertToBase Base16 (B8.toStrict bs ) ) 
 
-
 bdictInsert :: String -> BEncode -> BEncode -> BEncode
 bdictInsert k v (BDict m)  = BDict $ M.insert k v m
 bdictInsert _ _ bd         = bd
 
 addInfoHash be = maybe be (\bs -> bdictInsert "hash" bs be) (infoHash be )
-
-addFileName f (BDict m) = BDict ( M.insert "filename" (BString f) m )
-addFileName _ bd = bd
-
-bytesToInfo fp bs = bdictInsert "filename" (BString . U8.fromString $ fp) . addInfoHash <$> bRead bs 
 
 bytesToTorrent file bs = bdictInsert "filename" (bString file) . addInfoHash <$> bRead bs
 
@@ -75,7 +66,5 @@ main = do files <- getArgs
           mapM_ jsonify files
   where jsonify file = withBinaryFile file ReadMode 
                    (\h -> do bs   <- B8.fromStrict <$> SB8.hGetContents h 
-                             let json = encode <$> bytesToInfo file bs
+                             let json = encode <$> bytesToTorrent file bs
                              maybe mempty BL.putStrLn json )
-
-
